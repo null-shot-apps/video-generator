@@ -176,7 +176,9 @@ export default function VideoGenerator() {
         throw new Error(`InVideo AI API error: ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as { video_id?: string; id?: string };
+      const jobId = data.video_id || data.id;
+      const data = await response.json() as { video_id?: string; id?: string };
       const jobId = data.video_id || data.id;
       
       setVideoJobId(jobId);
