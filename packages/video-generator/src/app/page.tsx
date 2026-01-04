@@ -20,14 +20,42 @@ export default function VideoGenerator() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedVideo, setGeneratedVideo] = useState<string | null>(null);
   const [uploadedAudio, setUploadedAudio] = useState<File | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [progressStatus, setProgressStatus] = useState('');
+  const [elapsedTime, setElapsedTime] = useState(0);
 
   const handleGenerate = async () => {
     setIsGenerating(true);
-    // Simulate generation
-    setTimeout(() => {
-      setGeneratedVideo('preview');
-      setIsGenerating(false);
-    }, 3000);
+    setProgress(0);
+    setElapsedTime(0);
+    setGeneratedVideo(null);
+
+    // Timer for elapsed time
+    const startTime = Date.now();
+    const timerInterval = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+
+    // Simulate generation with progress stages
+    const stages = [
+      { progress: 15, status: 'Initializing AI models...', delay: 800 },
+      { progress: 30, status: 'Generating landscape scenes...', delay: 1200 },
+      { progress: 50, status: 'Applying mood and style...', delay: 1500 },
+      { progress: 65, status: 'Creating transitions...', delay: 1000 },
+      { progress: 80, status: 'Processing audio track...', delay: 1200 },
+      { progress: 95, status: 'Finalizing video...', delay: 800 },
+      { progress: 100, status: 'Complete!', delay: 500 },
+    ];
+
+    for (const stage of stages) {
+      await new Promise(resolve => setTimeout(resolve, stage.delay));
+      setProgress(stage.progress);
+      setProgressStatus(stage.status);
+    }
+
+    clearInterval(timerInterval);
+    setGeneratedVideo('preview');
+    setIsGenerating(false);
   };
 
   const handleDownload = (format: string) => {
@@ -280,6 +308,49 @@ export default function VideoGenerator() {
               )}
             </div>
 
+            {/* Progress Bar */}
+            {isGenerating && (
+              <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-6 border border-slate-700">
+                <div className="space-y-4">
+                  {/* Status and Time */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <svg className="animate-spin h-5 w-5 text-purple-400" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <span className="text-sm font-medium text-slate-300">{progressStatus}</span>
+                    </div>
+                    <span className="text-sm text-slate-400">{elapsedTime}s</span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="relative">
+                    <div className="w-full h-3 bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500 ease-out relative"
+                        style={{ width: `${progress}%` }}
+                      >
+                        <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                      </div>
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span className="text-xs text-slate-400">0%</span>
+                      <span className="text-xs font-semibold text-purple-400">{progress}%</span>
+                      <span className="text-xs text-slate-400">100%</span>
+                    </div>
+                  </div>
+
+                  {/* Estimated Time */}
+                  <div className="text-center">
+                    <p className="text-xs text-slate-400">
+                      {progress < 100 ? 'Estimated time remaining: ~' + Math.max(0, 8 - elapsedTime) + 's' : 'Generation complete!'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Generate Button */}
             <button
               onClick={handleGenerate}
@@ -396,4 +467,7 @@ export default function VideoGenerator() {
     </div>
   );
 }
+
+
+
 
