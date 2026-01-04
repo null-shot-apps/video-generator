@@ -19,24 +19,133 @@ export default function VideoGenerator() {
   const [fadeInOut, setFadeInOut] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedVideo, setGeneratedVideo] = useState<string | null>(null);
+  const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   const [uploadedAudio, setUploadedAudio] = useState<File | null>(null);
   const [progress, setProgress] = useState(0);
   const [progressStatus, setProgressStatus] = useState('');
   const [elapsedTime, setElapsedTime] = useState(0);
+
+  const generateVideoBlob = async (): Promise<Blob> => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1920;
+      canvas.height = 1080;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        resolve(new Blob());
+        return;
+      }
+
+      const stream = canvas.captureStream(30);
+      const mimeType = 'video/webm; codecs=vp9';
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: mimeType,
+        videoBitsPerSecond: 5000000
+      });
+
+      const chunks: Blob[] = [];
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        resolve(blob);
+      };
+
+      mediaRecorder.start();
+
+      const fps = 30;
+      const totalFrames = videoLength * fps;
+      let frame = 0;
+
+      const drawFrame = () => {
+        if (frame >= totalFrames) {
+          mediaRecorder.stop();
+          return;
+        }
+
+        const gradients: Record<LandscapeType, string[]> = {
+          mountains: ['#1a1a2e', '#16213e', '#0f3460', '#533483'],
+          ocean: ['#0a1128', '#001f54', '#034078', '#1282a2'],
+          forest: ['#0d1b2a', '#1b263b', '#2d4a3e', '#415a4d'],
+          desert: ['#2b1b17', '#3e2723', '#5d4037', '#8d6e63'],
+          aurora: ['#0f0e17', '#1a1a2e', '#16213e', '#2d4263'],
+          clouds: ['#1c1c1c', '#2d3142', '#4f5d75', '#bfc0c0']
+        };
+
+        const colors = gradients[landscapeType];
+        const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        
+        const progress = frame / totalFrames;
+        const offset = Math.sin(progress * Math.PI * 2) * 0.1;
+        gradient.addColorStop(0, colors[0]);
+        gradient.addColorStop(0.33 + offset, colors[1]);
+        gradient.addColorStop(0.66 - offset, colors[2]);
+        gradient.addColorStop(1, colors[3]);
+
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.save();
+        ctx.globalAlpha = 0.3 + Math.sin(progress * Math.PI * 2) * 0.2;
+        
+        if (moodStyle === 'dreamy' || moodStyle === 'ethereal') {
+          for (let i = 0; i < 50; i++) {
+            const x = (i * 100 + frame * 2) % canvas.width;
+            const y = (i * 50 + Math.sin(frame * 0.05 + i) * 100) % canvas.height;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        if (moodStyle === 'dramatic' || moodStyle === 'cinematic') {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+          ctx.fillRect(0, 0, canvas.width, 150);
+          ctx.fillRect(0, canvas.height - 150, canvas.width, 150);
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.font = 'bold 80px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        const scale = 1 + Math.sin(progress * Math.PI * 2) * 0.05;
+        ctx.save();
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.scale(scale, scale);
+        ctx.fillText(`${landscapeType.toUpperCase()}`, 0, -40);
+        ctx.font = '40px Arial';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.fillText(moodStyle.toUpperCase(), 0, 40);
+        ctx.restore();
+
+        frame++;
+        requestAnimationFrame(drawFrame);
+      };
+
+      drawFrame();
+    });
+  };
 
   const handleGenerate = async () => {
     setIsGenerating(true);
     setProgress(0);
     setElapsedTime(0);
     setGeneratedVideo(null);
+    setVideoBlob(null);
 
-    // Timer for elapsed time
     const startTime = Date.now();
     const timerInterval = setInterval(() => {
       setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
     }, 1000);
 
-    // Simulate generation with progress stages
     const stages = [
       { progress: 15, status: 'Initializing AI models...', delay: 800 },
       { progress: 30, status: 'Generating landscape scenes...', delay: 1200 },
@@ -44,7 +153,6 @@ export default function VideoGenerator() {
       { progress: 65, status: 'Creating transitions...', delay: 1000 },
       { progress: 80, status: 'Processing audio track...', delay: 1200 },
       { progress: 95, status: 'Finalizing video...', delay: 800 },
-      { progress: 100, status: 'Complete!', delay: 500 },
     ];
 
     for (const stage of stages) {
@@ -53,8 +161,15 @@ export default function VideoGenerator() {
       setProgressStatus(stage.status);
     }
 
+    setProgressStatus('Rendering video preview...');
+    const blob = await generateVideoBlob();
+    const url = URL.createObjectURL(blob);
+    
+    setProgress(100);
+    setProgressStatus('Complete!');
     clearInterval(timerInterval);
-    setGeneratedVideo('preview');
+    setGeneratedVideo(url);
+    setVideoBlob(blob);
     setIsGenerating(false);
   };
 
@@ -62,7 +177,6 @@ export default function VideoGenerator() {
     const isAudio = format === 'MP3' || format === 'WAV';
     
     if (isAudio) {
-      // Handle audio download
       const mimeType = format === 'MP3' ? 'audio/mpeg' : 'audio/wav';
       const mockAudio = new Blob(['Mock audio content'], { type: mimeType });
       const url = URL.createObjectURL(mockAudio);
@@ -77,122 +191,16 @@ export default function VideoGenerator() {
       return;
     }
 
-    // Generate a real video file using Canvas and MediaRecorder
-    const canvas = document.createElement('canvas');
-    canvas.width = 1920;
-    canvas.height = 1080;
-    const ctx = canvas.getContext('2d');
-    
-    if (!ctx) return;
+    if (!videoBlob) return;
 
-    // Create video stream from canvas
-    const stream = canvas.captureStream(30); // 30 FPS
-    
-    // Use codec that's compatible with QuickTime
-    // H.264 in MP4 container is universally supported
-    const mimeType = format === 'MOV' 
-      ? 'video/mp4; codecs=avc1.42E01E' // H.264 baseline profile
-      : 'video/mp4; codecs=avc1.42E01E';
-    
-    const mediaRecorder = new MediaRecorder(stream, {
-      mimeType: mimeType,
-      videoBitsPerSecond: 5000000 // 5 Mbps for good quality
-    });
-
-    const chunks: Blob[] = [];
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) {
-        chunks.push(e.data);
-      }
-    };
-
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(chunks, { type: 'video/mp4' });
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `ai-video-${landscapeType}-${moodStyle}-${Date.now()}.${format.toLowerCase()}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 100);
-    };
-
-    // Start recording
-    mediaRecorder.start();
-
-    // Generate video frames based on landscape and mood
-    const fps = 30;
-    const duration = videoLength * 1000; // Convert to milliseconds
-    const totalFrames = (videoLength * fps);
-    let frame = 0;
-
-    const drawFrame = () => {
-      if (frame >= totalFrames) {
-        mediaRecorder.stop();
-        return;
-      }
-
-      // Create gradient background based on landscape type
-      const gradients: Record<LandscapeType, string[]> = {
-        mountains: ['#1a1a2e', '#16213e', '#0f3460', '#533483'],
-        ocean: ['#0a1128', '#001f54', '#034078', '#1282a2'],
-        forest: ['#0d1b2a', '#1b263b', '#2d4a3e', '#415a4d'],
-        desert: ['#2b1b17', '#3e2723', '#5d4037', '#8d6e63'],
-        aurora: ['#0f0e17', '#1a1a2e', '#16213e', '#2d4263'],
-        clouds: ['#1c1c1c', '#2d3142', '#4f5d75', '#bfc0c0']
-      };
-
-      const colors = gradients[landscapeType];
-      const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-      
-      // Animate gradient based on frame
-      const progress = frame / totalFrames;
-      gradient.addColorStop(0, colors[0]);
-      gradient.addColorStop(0.33, colors[1]);
-      gradient.addColorStop(0.66, colors[2]);
-      gradient.addColorStop(1, colors[3]);
-
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Add animated elements based on mood
-      ctx.save();
-      ctx.globalAlpha = 0.3 + Math.sin(progress * Math.PI * 2) * 0.2;
-      
-      // Draw mood-specific effects
-      if (moodStyle === 'dreamy' || moodStyle === 'ethereal') {
-        // Floating particles
-        for (let i = 0; i < 50; i++) {
-          const x = (i * 100 + frame * 2) % canvas.width;
-          const y = (i * 50 + Math.sin(frame * 0.05 + i) * 100) % canvas.height;
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-          ctx.beginPath();
-          ctx.arc(x, y, 3, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-
-      // Add text overlay
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.font = 'bold 60px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`${landscapeType.toUpperCase()} • ${moodStyle.toUpperCase()}`, canvas.width / 2, canvas.height / 2);
-      
-      ctx.font = '30px Arial';
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-      ctx.fillText('AI Generated Landscape', canvas.width / 2, canvas.height / 2 + 80);
-
-      ctx.restore();
-
-      frame++;
-      requestAnimationFrame(drawFrame);
-    };
-
-    drawFrame();
+    const url = URL.createObjectURL(videoBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ai-video-${landscapeType}-${moodStyle}-${Date.now()}.${format.toLowerCase()}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
   const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -514,18 +522,15 @@ export default function VideoGenerator() {
               {/* Video Preview */}
               <div className="aspect-video bg-slate-900 rounded-lg mb-6 flex items-center justify-center border-2 border-slate-700 overflow-hidden">
                 {generatedVideo ? (
-                  <div className="w-full h-full relative">
-                    <div className="absolute inset-0 bg-gradient-to-br from-purple-900/50 via-pink-900/50 to-blue-900/50 animate-pulse" />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="text-center">
-                        <div className="text-6xl mb-4">🏔️</div>
-                        <p className="text-slate-300">Video Preview</p>
-                        <p className="text-sm text-slate-400 mt-2">
-                          {landscapeType} • {moodStyle} • {videoLength}s
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                  <video
+                    src={generatedVideo}
+                    controls
+                    autoPlay
+                    loop
+                    className="w-full h-full object-cover"
+                  >
+                    Your browser does not support the video tag.
+                  </video>
                 ) : (
                   <div className="text-center text-slate-400">
                     <div className="text-6xl mb-4">🎥</div>
@@ -600,6 +605,10 @@ export default function VideoGenerator() {
     </div>
   );
 }
+
+
+
+
 
 
 
