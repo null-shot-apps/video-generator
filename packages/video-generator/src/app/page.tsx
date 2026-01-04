@@ -58,31 +58,141 @@ export default function VideoGenerator() {
     setIsGenerating(false);
   };
 
-  const handleDownload = (format: string) => {
-    // Create a mock video/audio blob for demonstration
-    // In production, this would be the actual generated content
+  const handleDownload = async (format: string) => {
     const isAudio = format === 'MP3' || format === 'WAV';
-    const mimeType = {
-      'MP4': 'video/mp4',
-      'MOV': 'video/quicktime',
-      'MP3': 'audio/mpeg',
-      'WAV': 'audio/wav'
-    }[format] || 'video/mp4';
+    
+    if (isAudio) {
+      // Handle audio download
+      const mimeType = format === 'MP3' ? 'audio/mpeg' : 'audio/wav';
+      const mockAudio = new Blob(['Mock audio content'], { type: mimeType });
+      const url = URL.createObjectURL(mockAudio);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ai-video-audio-${landscapeType}-${moodStyle}-${Date.now()}.${format.toLowerCase()}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+      return;
+    }
 
-    // Create a small mock file (in production, this would be your actual generated content)
-    const mockContent = new Blob(['Mock generated content'], { type: mimeType });
-    const url = URL.createObjectURL(mockContent);
+    // Generate a real video file using Canvas and MediaRecorder
+    const canvas = document.createElement('canvas');
+    canvas.width = 1920;
+    canvas.height = 1080;
+    const ctx = canvas.getContext('2d');
     
-    // Create download link
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `ai-video-${landscapeType}-${moodStyle}-${Date.now()}.${format.toLowerCase()}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (!ctx) return;
+
+    // Create video stream from canvas
+    const stream = canvas.captureStream(30); // 30 FPS
     
-    // Clean up the URL
-    setTimeout(() => URL.revokeObjectURL(url), 100);
+    // Use codec that's compatible with QuickTime
+    // H.264 in MP4 container is universally supported
+    const mimeType = format === 'MOV' 
+      ? 'video/mp4; codecs=avc1.42E01E' // H.264 baseline profile
+      : 'video/mp4; codecs=avc1.42E01E';
+    
+    const mediaRecorder = new MediaRecorder(stream, {
+      mimeType: mimeType,
+      videoBitsPerSecond: 5000000 // 5 Mbps for good quality
+    });
+
+    const chunks: Blob[] = [];
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        chunks.push(e.data);
+      }
+    };
+
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(chunks, { type: 'video/mp4' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ai-video-${landscapeType}-${moodStyle}-${Date.now()}.${format.toLowerCase()}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    };
+
+    // Start recording
+    mediaRecorder.start();
+
+    // Generate video frames based on landscape and mood
+    const fps = 30;
+    const duration = videoLength * 1000; // Convert to milliseconds
+    const totalFrames = (videoLength * fps);
+    let frame = 0;
+
+    const drawFrame = () => {
+      if (frame >= totalFrames) {
+        mediaRecorder.stop();
+        return;
+      }
+
+      // Create gradient background based on landscape type
+      const gradients: Record<LandscapeType, string[]> = {
+        mountains: ['#1a1a2e', '#16213e', '#0f3460', '#533483'],
+        ocean: ['#0a1128', '#001f54', '#034078', '#1282a2'],
+        forest: ['#0d1b2a', '#1b263b', '#2d4a3e', '#415a4d'],
+        desert: ['#2b1b17', '#3e2723', '#5d4037', '#8d6e63'],
+        aurora: ['#0f0e17', '#1a1a2e', '#16213e', '#2d4263'],
+        clouds: ['#1c1c1c', '#2d3142', '#4f5d75', '#bfc0c0']
+      };
+
+      const colors = gradients[landscapeType];
+      const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+      
+      // Animate gradient based on frame
+      const progress = frame / totalFrames;
+      gradient.addColorStop(0, colors[0]);
+      gradient.addColorStop(0.33, colors[1]);
+      gradient.addColorStop(0.66, colors[2]);
+      gradient.addColorStop(1, colors[3]);
+
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Add animated elements based on mood
+      ctx.save();
+      ctx.globalAlpha = 0.3 + Math.sin(progress * Math.PI * 2) * 0.2;
+      
+      // Draw mood-specific effects
+      if (moodStyle === 'dreamy' || moodStyle === 'ethereal') {
+        // Floating particles
+        for (let i = 0; i < 50; i++) {
+          const x = (i * 100 + frame * 2) % canvas.width;
+          const y = (i * 50 + Math.sin(frame * 0.05 + i) * 100) % canvas.height;
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.beginPath();
+          ctx.arc(x, y, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Add text overlay
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.font = 'bold 60px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${landscapeType.toUpperCase()} • ${moodStyle.toUpperCase()}`, canvas.width / 2, canvas.height / 2);
+      
+      ctx.font = '30px Arial';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.fillText('AI Generated Landscape', canvas.width / 2, canvas.height / 2 + 80);
+
+      ctx.restore();
+
+      frame++;
+      requestAnimationFrame(drawFrame);
+    };
+
+    drawFrame();
   };
 
   const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -490,6 +600,7 @@ export default function VideoGenerator() {
     </div>
   );
 }
+
 
 
 
