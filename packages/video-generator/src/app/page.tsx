@@ -59,7 +59,30 @@ export default function VideoGenerator() {
   };
 
   const handleDownload = (format: string) => {
-    alert(`Downloading in ${format} format...`);
+    // Create a mock video/audio blob for demonstration
+    // In production, this would be the actual generated content
+    const isAudio = format === 'MP3' || format === 'WAV';
+    const mimeType = {
+      'MP4': 'video/mp4',
+      'MOV': 'video/quicktime',
+      'MP3': 'audio/mpeg',
+      'WAV': 'audio/wav'
+    }[format] || 'video/mp4';
+
+    // Create a small mock file (in production, this would be your actual generated content)
+    const mockContent = new Blob(['Mock generated content'], { type: mimeType });
+    const url = URL.createObjectURL(mockContent);
+    
+    // Create download link
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ai-video-${landscapeType}-${moodStyle}-${Date.now()}.${format.toLowerCase()}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Clean up the URL
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
   const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -467,6 +490,7 @@ export default function VideoGenerator() {
     </div>
   );
 }
+
 
 
 
