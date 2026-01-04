@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Build anything from a chat",
-  description: "Turn chats into apps. Prompt. Ship. Repeat.",
+  title: "AI Video Generator - Create Dreamy Landscapes",
+  description: "Generate copyright-free AI videos with dreamy and moody landscapes. Perfect for social media with customizable prompts and audio.",
 };
 
 export default function RootLayout({
@@ -32,3 +32,4 @@ export default function RootLayout({
     </html>
   );
 }
+

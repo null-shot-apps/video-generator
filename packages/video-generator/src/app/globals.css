@@ -19,10 +19,10 @@
   }
 }
 
-/* Non-scroll and full-height baseline */
+/* Allow scrolling for content */
 html, body {
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -147,3 +147,4 @@ body {
 .animate-bounce-horizontal {
   animation: bounce-horizontal 1.5s ease-in-out infinite;
 }
+
