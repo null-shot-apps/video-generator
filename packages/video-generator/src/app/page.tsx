@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 type GenerationMethod = 'ai-video' | 'image-to-video' | 'stock-enhanced';
 type AudioSource = 'ai-generated' | 'upload' | 'none';
@@ -24,6 +24,13 @@ export default function VideoGenerator() {
   const [progress, setProgress] = useState(0);
   const [progressStatus, setProgressStatus] = useState('');
   const [elapsedTime, setElapsedTime] = useState(0);
+  
+  // InVideo AI Integration
+  const [invideoApiKey, setInvideoApiKey] = useState('');
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const [videoJobId, setVideoJobId] = useState<string | null>(null);
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   const generateVideoBlob = async (): Promise<Blob> => {
     return new Promise((resolve) => {
@@ -134,6 +141,145 @@ export default function VideoGenerator() {
     });
   };
 
+  // InVideo AI API Integration
+  const generateWithInVideoAI = async () => {
+    if (!invideoApiKey) {
+      alert('Please enter your InVideo AI API key');
+      setShowApiKeyInput(true);
+      return;
+    }
+
+    try {
+      // Build the prompt for InVideo AI
+      const fullPrompt = customPrompt || 
+        `Create a ${moodStyle} ${landscapeType} landscape video. ${videoLength} seconds long with ${transitionStyle} transitions.`;
+
+      setProgressStatus('Sending request to InVideo AI...');
+      setProgress(10);
+
+      // Call InVideo AI API to create video
+      const response = await fetch('https://api.invideo.io/v2/videos', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${invideoApiKey}`,
+        },
+        body: JSON.stringify({
+          prompt: fullPrompt,
+          duration: videoLength,
+          aspect_ratio: '16:9',
+          voice_over: audioSource === 'ai-generated',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`InVideo AI API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const jobId = data.video_id || data.id;
+      
+      setVideoJobId(jobId);
+      setProgress(20);
+      setProgressStatus('Video generation started. Polling for completion...');
+
+      // Start polling for video completion
+      startPolling(jobId);
+    } catch (error) {
+      console.error('InVideo AI generation error:', error);
+      setProgressStatus('Error: ' + (error as Error).message);
+      setIsGenerating(false);
+    }
+  };
+
+  // Polling system to check video status
+  const startPolling = (jobId: string) => {
+    let pollCount = 0;
+    const maxPolls = 120; // 10 minutes max (5 second intervals)
+
+    const poll = async () => {
+      try {
+        pollCount++;
+        
+        const response = await fetch(`https://api.invideo.io/v2/videos/${jobId}`, {
+          headers: {
+            'Authorization': `Bearer ${invideoApiKey}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to check video status');
+        }
+
+        const data = await response.json();
+        const status = data.status;
+
+        // Update progress based on status
+        if (status === 'processing') {
+          const estimatedProgress = Math.min(20 + (pollCount * 2), 90);
+          setProgress(estimatedProgress);
+          setProgressStatus(`InVideo AI is generating your video... (${Math.floor(pollCount * 5 / 60)}m ${(pollCount * 5) % 60}s)`);
+        } else if (status === 'completed' || status === 'success') {
+          setProgress(95);
+          setProgressStatus('Downloading video from InVideo AI...');
+          
+          // Download the video
+          const videoUrl = data.video_url || data.url;
+          await downloadVideoFromUrl(videoUrl);
+          
+          setProgress(100);
+          setProgressStatus('Complete!');
+          stopPolling();
+          setIsGenerating(false);
+        } else if (status === 'failed' || status === 'error') {
+          throw new Error('Video generation failed on InVideo AI');
+        }
+
+        // Continue polling if not complete and under max polls
+        if (pollCount < maxPolls && status !== 'completed' && status !== 'success' && status !== 'failed') {
+          pollingRef.current = setTimeout(poll, 5000); // Poll every 5 seconds
+        } else if (pollCount >= maxPolls) {
+          throw new Error('Video generation timeout - please try again');
+        }
+      } catch (error) {
+        console.error('Polling error:', error);
+        setProgressStatus('Error: ' + (error as Error).message);
+        stopPolling();
+        setIsGenerating(false);
+      }
+    };
+
+    poll();
+  };
+
+  const stopPolling = () => {
+    if (pollingRef.current) {
+      clearTimeout(pollingRef.current);
+      pollingRef.current = null;
+    }
+  };
+
+  const downloadVideoFromUrl = async (url: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const videoUrl = URL.createObjectURL(blob);
+      
+      setGeneratedVideo(videoUrl);
+      setVideoBlob(blob);
+    } catch (error) {
+      console.error('Error downloading video:', error);
+      throw error;
+    }
+  };
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, []);
+
   const handleGenerate = async () => {
     setIsGenerating(true);
     setProgress(0);
@@ -146,6 +292,14 @@ export default function VideoGenerator() {
       setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
     }, 1000);
 
+    // Use InVideo AI if API key is provided and method is ai-video
+    if (invideoApiKey && generationMethod === 'ai-video') {
+      await generateWithInVideoAI();
+      clearInterval(timerInterval);
+      return;
+    }
+
+    // Fallback to local generation for demo purposes
     const stages = [
       { progress: 15, status: 'Initializing AI models...', delay: 800 },
       { progress: 30, status: 'Generating landscape scenes...', delay: 1200 },
@@ -223,6 +377,54 @@ export default function VideoGenerator() {
         <div className="grid lg:grid-cols-2 gap-8">
           {/* Left Panel - Prompt Studio */}
           <div className="space-y-6">
+            {/* InVideo AI API Key Section */}
+            <div className="bg-gradient-to-r from-purple-800/30 to-pink-800/30 backdrop-blur-sm rounded-xl p-6 border border-purple-500/50">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <span className="text-purple-400">🔑</span> InVideo AI Integration
+                </h3>
+                <button
+                  onClick={() => setShowApiKeyInput(!showApiKeyInput)}
+                  className="text-sm text-purple-400 hover:text-purple-300 transition-colors"
+                >
+                  {showApiKeyInput ? 'Hide' : 'Configure'}
+                </button>
+              </div>
+              
+              {showApiKeyInput ? (
+                <div className="space-y-3">
+                  <input
+                    type="password"
+                    value={invideoApiKey}
+                    onChange={(e) => setInvideoApiKey(e.target.value)}
+                    placeholder="Enter your InVideo AI API key"
+                    className="w-full p-3 rounded-lg bg-slate-900/50 border border-purple-500/30 focus:border-purple-500 focus:outline-none text-sm"
+                  />
+                  <p className="text-xs text-slate-400">
+                    Get your API key from{' '}
+                    <a href="https://invideo.io" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">
+                      invideo.io
+                    </a>
+                    . Required for AI video generation method.
+                  </p>
+                  {invideoApiKey && (
+                    <div className="flex items-center gap-2 text-sm text-green-400">
+                      <span>✓</span>
+                      <span>API key configured</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400">
+                  {invideoApiKey ? (
+                    <span className="text-green-400">✓ API key configured - Ready to generate with InVideo AI</span>
+                  ) : (
+                    <span>Configure your InVideo AI API key to enable AI video generation</span>
+                  )}
+                </p>
+              )}
+            </div>
+
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-6 border border-slate-700">
               <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
                 <span className="text-purple-400">✨</span> Prompt Studio
@@ -240,8 +442,15 @@ export default function VideoGenerator() {
                         : 'border-slate-600 bg-slate-700/30 hover:border-slate-500'
                     }`}
                   >
-                    <div className="font-medium">AI Video Generation</div>
-                    <div className="text-xs text-slate-400">Runway, Stability AI APIs</div>
+                    <div className="font-medium flex items-center gap-2">
+                      AI Video Generation
+                      {invideoApiKey && generationMethod === 'ai-video' && (
+                        <span className="text-xs bg-purple-500 px-2 py-0.5 rounded-full">InVideo AI</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      {invideoApiKey ? 'Using InVideo AI API' : 'Requires API key for InVideo AI'}
+                    </div>
                   </button>
                   <button
                     onClick={() => setGenerationMethod('image-to-video')}
@@ -605,6 +814,10 @@ export default function VideoGenerator() {
     </div>
   );
 }
+
+
+
+
 
 
 
